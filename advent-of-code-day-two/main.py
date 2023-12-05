@@ -13,7 +13,7 @@ def parse_game_data(lines):
 
   return data, mr, mg, mb
 
-def pt1(data, mr, mg, mb):
+def part_one(data, mr, mg, mb):
   total = 0
 
   for i, game in enumerate(data):
@@ -29,7 +29,7 @@ def pt1(data, mr, mg, mb):
 
   return total
 
-def pt2(data):
+def part_two(data):
   total = 0
 
   for game in data:
@@ -44,11 +44,11 @@ def main():
   lines = load_input()
   data, mr, mg, mb = parse_game_data(lines)
 
-  result_pt1 = pt1(data, mr, mg, mb)
-  result_pt2 = pt2(data)
+  result_part_one = part_one(data, mr, mg, mb)
+  result_part_two = part_two(data)
 
-  print(f"Part 1: {result_pt1}")
-  print(f"Part 2: {result_pt2}")
+  print(f"Part 1: {result_part_one}")
+  print(f"Part 2: {result_part_two}")
 
 if __name__ == "__main__":
   main()
