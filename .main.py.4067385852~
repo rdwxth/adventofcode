@@ -1,0 +1,159 @@
+import os
+import requests
+import re
+from urllib.parse import unquote
+import base64
+
+
+class MovieFetcher:
+    def __init__(self):
+        self.base_helper_url = "https://9anime.eltik.net"
+        self.headers = {"User-Agent": "CustomUserAgent"}
+        self.session = requests.Session()
+
+    def get_imdb_info(self, query):
+        imdb_url = "http://www.omdbapi.com/?s=" + query + "&apikey=9b925aaa"
+        response = self.session.get(imdb_url, headers=self.headers).json()
+        try:
+            for idx, item in enumerate(response["Search"], start=1):
+                print(f"{idx}-> {item['Title']} | {item['Year']} | {item['Type']}")
+
+            selected = int(input("Select-> ")) - 1
+
+            return response["Search"][selected]["imdbID"], response["Search"][selected]["Title"]
+
+        except Exception as e:
+            print(str(e))
+            return None, None
+
+    def decode(self, str) -> bytearray:
+        key_bytes = bytes('8z5Ag5wgagfsOuhz', 'utf-8')
+        j = 0
+        s = bytearray(range(256))
+
+        for i in range(256):
+            j = (j + s[i] + key_bytes[i % len(key_bytes)]) & 0xff
+            s[i], s[j] = s[j], s[i]
+
+        decoded = bytearray(len(str))
+        i = 0
+        k = 0
+
+        for index in range(len(str)):
+            i = (i + 1) & 0xff
+            k = (k + s[i]) & 0xff
+            s[i], s[k] = s[k], s[i]
+            t = (s[i] + s[k]) & 0xff
+            decoded[index] = str[index] ^ s[t]
+
+        return decoded
+
+    def decode_base64_url_safe(self, s) -> bytearray:
+        standardized_input = s.replace('_', '/').replace('-', '+')
+        binary_data = base64.b64decode(standardized_input)
+
+        return bytearray(binary_data)
+    def decrypt_source_url(self, source_url) -> str:
+        encoded = self.decode_base64_url_safe(source_url)
+        decoded = self.decode(encoded)
+        decoded_text = decoded.decode('utf-8')
+        return unquote(decoded_text)
+
+    def encode_id(self, v_id) -> str:
+        key1, key2 = requests.get('https://raw.githubusercontent.com/Claudemirovsky/worstsource-keys/keys/keys.json').json() # love u claude
+        decoded_id = self.key_permutation(key1, v_id).encode('Latin_1')
+        encoded_result = self.key_permutation(key2, decoded_id).encode('Latin_1')
+        encoded_base64 = base64.b64encode(encoded_result)
+
+        return encoded_base64.decode('utf-8').replace('/', '_')
+
+    def key_permutation(self, key, data) -> str:
+        state = list(range(256))
+        index_1 = 0
+
+        for i in range(256):
+            index_1 = ((index_1 + state[i]) + ord(key[i % len(key)])) % 256
+            state[i], state[index_1] = state[index_1], state[i]
+
+        index_1 = index_2 = 0
+        final_key = ''
+
+        for char in range(len(data)):
+            index_1 = (index_1 + 1) % 256
+            index_2 = (index_2 + state[index_1]) % 256
+            state[index_1], state[index_2] = state[index_2], state[index_1]
+
+            if isinstance(data[char], str):
+                final_key += chr(ord(data[char]) ^ state[(state[index_1] + state[index_2]) % 256])
+            elif isinstance(data[char], int):
+                final_key += chr((data[char]) ^ state[(state[index_1] + state[index_2]) % 256])
+
+        return final_key
+
+
+    def get_futoken(self, key, url) -> str:
+        req = requests.get("https://vidplay.site/futoken", {"Referer": url})
+        fu_key = re.search(r"var\s+k\s*=\s*'([^']+)'", req.text).group(1)
+
+        return f"{fu_key},{','.join([str(ord(fu_key[i % len(fu_key)]) + ord(key[i])) for i in range(len(key))])}"
+
+    def handle_vidplay(self, url) -> str:
+        key = self.encode_id(url.split('/e/')[1].split('?')[0])
+        data = self.get_futoken(key, url)
+
+        req = requests.get(f"https://vidplay.site/mediainfo/{data}?{url.split('?')[1]}&autostart=true", headers={"Referer": url})
+        req_data = req.json()
+
+        if type(req_data.get("result")) == dict:
+            return req_data.get("result").get("sources", [{}])[0].get("file")
+        return None
+
+    def get_video_link(self, imdb_id):
+        a = f"https://vidsrc.to/embed/movie/{imdb_id}"
+        get1 = self.session.get(a).text.split('data-id="')[1].split('">')[0]
+        get2 = self.session.get(f"https://vidsrc.to/ajax/embed/episode/{get1}/sources").json()["result"][0]["id"]
+        get3 = self.session.get("https://vidsrc.to/ajax/embed/source/"+get2).json()["result"]["url"]
+
+        # provider_embed_url = f"{self.base_helper_url}/fmovies-decrypt?query={get3}&apikey=jerry"
+        # response = self.session.get(provider_embed_url)
+        # response.raise_for_status()
+
+        provider_embed = self.decrypt_source_url(get3)
+        video_link = self.handle_vidplay(provider_embed)
+
+        # tmp = provider_embed.split('/')[-1].split('?')
+        # provider_query, params = tmp[0], '?' + tmp[1]
+
+        # futoken_url = "https://vidstream.pro/futoken"
+        # response = self.session.get(futoken_url)
+
+        # futoken = response.text
+
+        # rawvizcloud_url = f"{self.base_helper_url}/rawvizcloud?query={provider_query}&apikey=jerry"
+        # raw_data = {"query": provider_query, "futoken": futoken}
+
+        # response = self.session.post(rawvizcloud_url, data=raw_data)
+        subtitle_get = self.session.get(f"https://vidsrc.to/ajax/embed/episode/{get1}/subtitles").json()
+        for idx, item in enumerate(subtitle_get, start=1):
+            print(f"{idx}-> {item['label']}")
+
+        selected = int(input("Select-> ")) - 1
+        subtitle = subtitle_get[selected]["file"]
+
+        return video_link, subtitle
+
+    def play_video(self, title, subtitle_link, video_link):
+        print()
+        command = f"mpv {video_link} --sub-file={subtitle_link} --force-media-title="+title   
+        os.system(command)
+
+
+if __name__ == "__main__":
+    user_query = input('Enter movie/show=> ')
+    query = "+".join(user_query.split())
+
+    fetcher = MovieFetcher()
+    imdb_id, title = fetcher.get_imdb_info(query)
+    if imdb_id and title:
+        video_link, subtitle = fetcher.get_video_link(imdb_id)
+        fetcher.play_video(title, subtitle, video_link)
